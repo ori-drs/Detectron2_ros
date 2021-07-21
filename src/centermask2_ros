@@ -6,7 +6,7 @@ import time
 import cv2 as cv
 import numpy as np
 import rospy
-from detectron2.config import get_cfg
+from centermask.config import get_cfg
 from detectron2.data import MetadataCatalog
 from cv_bridge import CvBridge, CvBridgeError
 # import some common detectron2 utilities
@@ -16,8 +16,10 @@ from detectron2.utils.visualizer import Visualizer
 from detectron2_ros.msg import Result
 from sensor_msgs.msg import Image, RegionOfInterest
 
+# Needed to update backbone registry
+import centermask.modeling.backbone
 
-class Detectron2node(object):
+class Centermask2node(object):
     def __init__(self):
         rospy.logwarn("Initializing")
         setup_logger()
@@ -146,12 +148,12 @@ class Detectron2node(object):
     @staticmethod
     def load_param(param, default=None):
         new_param = rospy.get_param(param, default)
-        rospy.loginfo("[Detectron2] %s: %s", param, new_param)
+        rospy.loginfo("[Centermask2] %s: %s", param, new_param)
         return new_param
 
 def main(argv):
-    rospy.init_node('detectron2_ros')
-    node = Detectron2node()
+    rospy.init_node('centermask2_ros')
+    node = Centermask2node()
     node.run()
 
 if __name__ == '__main__':
