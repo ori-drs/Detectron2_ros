@@ -184,8 +184,8 @@ class Centermask2node(object):
         return cv_img
 
     def callback_images(self, rgb_msg, depth_msg):
-        # rospy.logdebug("Get time-synchronised images")
-        rospy.loginfo("Get time-synchronised images")
+        rospy.logdebug("Get time-synchronised images")
+        # rospy.loginfo("Get time-synchronised images")
         if self._msg_lock.acquire(False):
             self._last_rgb_msg = rgb_msg
             self._last_depth_msg = depth_msg
