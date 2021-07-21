@@ -55,6 +55,7 @@ include_directories(
 install(PROGRAMS
   src/detectron2_ros
   src/centermask2_ros
+  src/centermask2_depth_ros
 DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
