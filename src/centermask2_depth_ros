@@ -61,7 +61,7 @@ class Centermask2node(object):
             self._last_rgb_msg = None
             self._msg_lock.release()
         else:
-            continue
+            return
 
         if img_msg is not None:
             self._image_counter = self._image_counter + 1
