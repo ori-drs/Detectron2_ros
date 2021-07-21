@@ -101,7 +101,7 @@ class Centermask2node(object):
             return
 
         result_msg = Result()
-        result_msg.header = self._header
+        result_msg.header = self._rgb_header
         result_msg.class_ids = predictions.pred_classes if predictions.has("pred_classes") else None
         result_msg.class_names = np.array(self._class_names)[result_msg.class_ids.numpy()]
         result_msg.scores = predictions.scores if predictions.has("scores") else None
