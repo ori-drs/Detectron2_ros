@@ -56,40 +56,74 @@ class Centermask2node(object):
 
     def run(self):
 
-        rate = rospy.Rate(100)
-        while not rospy.is_shutdown():
-            if self._msg_lock.acquire(False):
-                img_msg = self._last_rgb_msg
-                self._last_rgb_msg = None
-                self._msg_lock.release()
-            else:
-                rate.sleep()
-                continue
+        if self._msg_lock.acquire(False):
+            img_msg = self._last_rgb_msg
+            self._last_rgb_msg = None
+            self._msg_lock.release()
+        else:
+            continue
 
-            if img_msg is not None:
-                self._image_counter = self._image_counter + 1
-                if (self._image_counter % 11) == 10:
-                    rospy.loginfo("Images detected per second=%.2f",
-                                  float(self._image_counter) / (time.time() - self.start_time))
+        if img_msg is not None:
+            self._image_counter = self._image_counter + 1
+            if (self._image_counter % 11) == 10:
+                rospy.loginfo("Images detected per second=%.2f",
+                                float(self._image_counter) / (time.time() - self.start_time))
 
-                np_image = self.convert_to_cv_image(img_msg)
+            np_image = self.convert_to_cv_image(img_msg)
 
-                outputs = self.predictor(np_image)
-                result = outputs["instances"].to("cpu")
-                result_msg = self.getResult(result)
+            outputs = self.predictor(np_image)
+            result = outputs["instances"].to("cpu")
+            result_msg = self.getResult(result)
 
-                self._result_pub.publish(result_msg)
+            self._result_pub.publish(result_msg)
 
-                # Visualize results
-                if self._visualization:
-                    v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-                    v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-                    img = v.get_image()[:, :, ::-1]
+            # Visualize results
+            if self._visualization:
+                v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
+                v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+                img = v.get_image()[:, :, ::-1]
 
-                    image_msg = self._bridge.cv2_to_imgmsg(img)
-                    self._vis_pub.publish(image_msg)
+                image_msg = self._bridge.cv2_to_imgmsg(img)
+                self._vis_pub.publish(image_msg)
 
-            rate.sleep()
+
+
+    # def run(self):
+
+    #     rate = rospy.Rate(100)
+    #     while not rospy.is_shutdown():
+    #         if self._msg_lock.acquire(False):
+    #             img_msg = self._last_rgb_msg
+    #             self._last_rgb_msg = None
+    #             self._msg_lock.release()
+    #         else:
+    #             rate.sleep()
+    #             continue
+
+    #         if img_msg is not None:
+    #             self._image_counter = self._image_counter + 1
+    #             if (self._image_counter % 11) == 10:
+    #                 rospy.loginfo("Images detected per second=%.2f",
+    #                               float(self._image_counter) / (time.time() - self.start_time))
+
+    #             np_image = self.convert_to_cv_image(img_msg)
+
+    #             outputs = self.predictor(np_image)
+    #             result = outputs["instances"].to("cpu")
+    #             result_msg = self.getResult(result)
+
+    #             self._result_pub.publish(result_msg)
+
+    #             # Visualize results
+    #             if self._visualization:
+    #                 v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
+    #                 v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+    #                 img = v.get_image()[:, :, ::-1]
+
+    #                 image_msg = self._bridge.cv2_to_imgmsg(img)
+    #                 self._vis_pub.publish(image_msg)
+
+    #         rate.sleep()
 
     def getResult(self, predictions):
 
@@ -158,6 +192,8 @@ class Centermask2node(object):
             self._depth_header = depth_msg.header
             self._msg_lock.release()
 
+            run()
+
     @staticmethod
     def load_param(param, default=None):
         new_param = rospy.get_param(param, default)
@@ -167,7 +203,8 @@ class Centermask2node(object):
 def main(argv):
     rospy.init_node('centermask2_ros')
     node = Centermask2node()
-    node.run()
+    # node.run()
+    rospy.spin()
 
 if __name__ == '__main__':
     main(sys.argv)
