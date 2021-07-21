@@ -193,7 +193,7 @@ class Centermask2node(object):
             self._depth_header = depth_msg.header
             self._msg_lock.release()
 
-            run()
+            self.run()
 
     @staticmethod
     def load_param(param, default=None):
