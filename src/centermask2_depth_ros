@@ -83,7 +83,7 @@ class Centermask2node(object):
 
             self._result_pub.publish(result_msg)
 
-            static_depth_image_msg = bridge.cv2_to_imgmsg(static_depth_img, '16UC1')
+            static_depth_image_msg = self._bridge.cv2_to_imgmsg(static_depth_img, '16UC1')
             self._static_depth_img_pub.publish(static_depth_image_msg)
 
             # Visualize results
