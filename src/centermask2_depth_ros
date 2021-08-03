@@ -79,7 +79,7 @@ class Centermask2node(object):
             result = outputs["instances"].to("cpu")
             result_msg = self.getResult(result)
 
-            static_depth_img = getStaticDepthImage(np_depth_image, result, self._class_names)
+            static_depth_img = self.getStaticDepthImage(np_depth_image, result, self._class_names)
 
             self._result_pub.publish(result_msg)
 
