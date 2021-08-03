@@ -79,7 +79,7 @@ class Centermask2node(object):
             result = outputs["instances"].to("cpu")
             result_msg = self.getResult(result)
 
-            static_depth_img = self.getStaticDepthImage(np_depth_image, result, self._class_names)
+            static_depth_img = self.getStaticDepthImage(np_depth_image, result)
 
             self._result_pub.publish(result_msg)
 
@@ -160,7 +160,7 @@ class Centermask2node(object):
 
         return cv_img
 
-    def getStaticDepthImage(depth_image, predictions, class_names):
+    def getStaticDepthImage(self, depth_image, predictions):
 
         static_depth_img = depth_image.copy()
         boxes = predictions.pred_boxes if predictions.has("pred_boxes") else None
@@ -171,7 +171,7 @@ class Centermask2node(object):
             return
 
         class_ids = predictions.pred_classes if predictions.has("pred_classes") else None
-        class_names = np.array(class_names)[class_ids.numpy()]
+        class_names = np.array(self._class_names)[class_ids.numpy()]
         scores = predictions.scores if predictions.has("scores") else None
         
         arr = (class_names == 'person') & (scores.numpy() > 0.5)
@@ -206,7 +206,6 @@ class Centermask2node(object):
 def main(argv):
     rospy.init_node('centermask2_ros')
     node = Centermask2node()
-    # node.run()
     rospy.spin()
 
 if __name__ == '__main__':
