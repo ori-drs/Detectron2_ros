@@ -44,6 +44,7 @@ class Centermask2node(object):
         self._visualization = self.load_param('~visualization',True)
         self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
         self._vis_pub = rospy.Publisher('~visualization', Image, queue_size=1)
+        self._static_depth_img_pub = rospy.Publisher('~static_depth_image', Image, queue_size=1)
 
         self._image_sub = message_filters.Subscriber(self.load_param('~rgb_input'), Image)
         self._depth_sub = message_filters.Subscriber(self.load_param('~depth_input'), Image)
@@ -58,7 +59,9 @@ class Centermask2node(object):
 
         if self._msg_lock.acquire(False):
             img_msg = self._last_rgb_msg
+            depth_msg = self._last_depth_msg
             self._last_rgb_msg = None
+            self._last_depth_msg = None
             self._msg_lock.release()
         else:
             return
@@ -70,12 +73,18 @@ class Centermask2node(object):
                                 float(self._image_counter) / (time.time() - self.start_time))
 
             np_image = self.convert_to_cv_image(img_msg)
+            np_depth_image = self.convert_to_cv_image(depth_msg)
 
             outputs = self.predictor(np_image)
             result = outputs["instances"].to("cpu")
             result_msg = self.getResult(result)
 
+            static_depth_img = getStaticDepthImage(np_depth_image, result, self._class_names)
+
             self._result_pub.publish(result_msg)
+
+            static_depth_image_msg = bridge.cv2_to_imgmsg(static_depth_img, '16UC1')
+            self._static_depth_img_pub.publish(static_depth_image_msg)
 
             # Visualize results
             if self._visualization:
@@ -86,44 +95,6 @@ class Centermask2node(object):
                 image_msg = self._bridge.cv2_to_imgmsg(img)
                 self._vis_pub.publish(image_msg)
 
-
-
-    # def run(self):
-
-    #     rate = rospy.Rate(100)
-    #     while not rospy.is_shutdown():
-    #         if self._msg_lock.acquire(False):
-    #             img_msg = self._last_rgb_msg
-    #             self._last_rgb_msg = None
-    #             self._msg_lock.release()
-    #         else:
-    #             rate.sleep()
-    #             continue
-
-    #         if img_msg is not None:
-    #             self._image_counter = self._image_counter + 1
-    #             if (self._image_counter % 11) == 10:
-    #                 rospy.loginfo("Images detected per second=%.2f",
-    #                               float(self._image_counter) / (time.time() - self.start_time))
-
-    #             np_image = self.convert_to_cv_image(img_msg)
-
-    #             outputs = self.predictor(np_image)
-    #             result = outputs["instances"].to("cpu")
-    #             result_msg = self.getResult(result)
-
-    #             self._result_pub.publish(result_msg)
-
-    #             # Visualize results
-    #             if self._visualization:
-    #                 v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-    #                 v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-    #                 img = v.get_image()[:, :, ::-1]
-
-    #                 image_msg = self._bridge.cv2_to_imgmsg(img)
-    #                 self._vis_pub.publish(image_msg)
-
-    #         rate.sleep()
 
     def getResult(self, predictions):
 
@@ -169,6 +140,10 @@ class Centermask2node(object):
             encoding = np.uint8
         elif image_msg.encoding.lower() == 'mono8':
             encoding = np.uint8
+        elif image_msg.encoding.lower() == '16uc1':
+            # For depth images        
+            encoding = np.uint16
+            channels = 1
         elif image_msg.encoding.lower() == '32fc1':
             encoding = np.float32
             channels = 1
@@ -178,10 +153,37 @@ class Centermask2node(object):
 
         if image_msg.encoding.lower() == 'mono8':
             cv_img = cv.cvtColor(cv_img, cv.COLOR_RGB2GRAY)
+        elif image_msg.encoding.lower() == '16uc1':
+            pass
         else:
             cv_img = cv.cvtColor(cv_img, cv.COLOR_RGB2BGR)
 
         return cv_img
+
+    def getStaticDepthImage(depth_image, predictions, class_names):
+
+        static_depth_img = depth_image.copy()
+        boxes = predictions.pred_boxes if predictions.has("pred_boxes") else None
+
+        if predictions.has("pred_masks"):
+            masks = np.asarray(predictions.pred_masks)
+        else:
+            return
+
+        class_ids = predictions.pred_classes if predictions.has("pred_classes") else None
+        class_names = np.array(class_names)[class_ids.numpy()]
+        scores = predictions.scores if predictions.has("scores") else None
+        
+        arr = (class_names == 'person') & (scores.numpy() > 0.5)
+        inds = np.where(arr)[0]
+        
+        if len(inds)<1:
+            return
+        
+        for i, (x1, y1, x2, y2) in enumerate(boxes[arr]):
+            static_depth_img[masks[inds[i]]]=0
+
+        return static_depth_img
 
     def callback_images(self, rgb_msg, depth_msg):
         rospy.logdebug("Get time-synchronised images")
