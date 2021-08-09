@@ -83,7 +83,7 @@ class Centermask2node(object):
 
             self._result_pub.publish(result_msg)
 
-            static_depth_image_msg = self._bridge.cv2_to_imgmsg(static_depth_img, '16UC1')
+            static_depth_image_msg = self._bridge.cv2_to_imgmsg(static_depth_img)
             self._static_depth_img_pub.publish(static_depth_image_msg)
 
             # Visualize results
@@ -180,8 +180,12 @@ class Centermask2node(object):
         if len(inds)<1:
             return
         
+        # kernel = np.ones((5,5),np.uint8)
+
         for i, (x1, y1, x2, y2) in enumerate(boxes[arr]):
             static_depth_img[masks[inds[i]]]=0
+            # Could be worth transforming the masks to both reduce noise and dilate
+            # static_depth_img[cv2.dilate(masks[inds[i]],kernel,iterations = 1) ]=0
 
         return static_depth_img
 
