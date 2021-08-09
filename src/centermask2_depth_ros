@@ -28,11 +28,14 @@ class Centermask2node(object):
         rospy.logwarn("Initializing")
         setup_logger()
 
+
         self._bridge = CvBridge()
         self._last_rgb_msg = None
         self._last_depth_msg = None
         self._msg_lock = threading.Lock()
         self._image_counter = 0
+
+        self.removal_classes = ['person', 'chair']
 
         self.cfg = get_cfg()
         self.cfg.merge_from_file(self.load_param('~config'))
@@ -126,6 +129,39 @@ class Centermask2node(object):
 
         return result_msg
 
+    def getThresholdedResult(self, predictions):
+
+        inds = np.where(predictions.scores.numpy() > 0.5)[0]
+
+        boxes = predictions.pred_boxes[inds] if predictions.has("pred_boxes") else None
+        
+
+        if predictions.has("pred_masks"):
+            masks = np.asarray(predictions.pred_masks)
+        else:
+            return
+
+        result_msg = Result()
+        result_msg.header = self._rgb_header
+        result_msg.class_ids = predictions.pred_classes[inds] if predictions.has("pred_classes") else None
+        result_msg.class_names = np.array(self._class_names)[result_msg.class_ids.numpy()][inds]
+        result_msg.scores = predictions.scores[inds] if predictions.has("scores") else None
+
+        for i, (x1, y1, x2, y2) in enumerate(boxes):
+            mask = np.zeros(masks[i].shape, dtype="uint8")
+            mask[masks[i, :, :]]=255
+            mask = self._bridge.cv2_to_imgmsg(mask)
+            result_msg.masks.append(mask)
+
+            box = RegionOfInterest()
+            box.x_offset = np.uint32(x1)
+            box.y_offset = np.uint32(y1)
+            box.height = np.uint32(y2 - y1)
+            box.width = np.uint32(x2 - x1)
+            result_msg.boxes.append(box)
+
+        return result_msg
+
     def convert_to_cv_image(self, image_msg):
 
         if image_msg is None:
@@ -174,7 +210,8 @@ class Centermask2node(object):
         class_names = np.array(self._class_names)[class_ids.numpy()]
         scores = predictions.scores if predictions.has("scores") else None
         
-        arr = (class_names == 'person') & (scores.numpy() > 0.5)
+        # arr = (class_names == 'person') & (scores.numpy() > 0.5)
+        arr = (np.isin(class_names, self.removal_classes)) & (scores.numpy() > 0.6)
         inds = np.where(arr)[0]
         
         if len(inds)<1:
