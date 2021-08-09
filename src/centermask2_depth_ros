@@ -224,7 +224,7 @@ class Centermask2node(object):
         for i, (x1, y1, x2, y2) in enumerate(boxes[arr]):
             # static_depth_img[masks[inds[i]]]=0
             # Could be worth transforming the masks to both reduce noise and dilate
-            static_depth_img[cv2.dilate(masks[inds[i]],kernel,iterations = 1) ]=0
+            static_depth_img[cv.dilate(masks[inds[i]],kernel,iterations = 1) ]=0
 
         return static_depth_img
 
