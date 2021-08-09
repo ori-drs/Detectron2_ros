@@ -168,7 +168,7 @@ class Centermask2node(object):
         if predictions.has("pred_masks"):
             masks = np.asarray(predictions.pred_masks)
         else:
-            return
+            return static_depth_img # No masks found so return the whole depth image
 
         class_ids = predictions.pred_classes if predictions.has("pred_classes") else None
         class_names = np.array(self._class_names)[class_ids.numpy()]
@@ -178,7 +178,7 @@ class Centermask2node(object):
         inds = np.where(arr)[0]
         
         if len(inds)<1:
-            return
+            return static_depth_img # No relevant masks found so return whole depth image
         
         # kernel = np.ones((5,5),np.uint8)
 
