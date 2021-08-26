@@ -19,8 +19,10 @@ catkin_python_setup()
 
 add_message_files(
   FILES
-    Result.msg
-)
+  Result.msg
+  PersonPosition.msg
+  PersonPositions.msg
+  )
 
 generate_messages(
   DEPENDENCIES

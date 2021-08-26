@@ -8,6 +8,7 @@
   <arg name="visualization" default="true" />
   <arg name="static_depth_image" default="static_depth_image" />
   <arg name="camera_info" default="camera_info" />
+  <arg name="person_positions" default="person_positions" />
 
   <node name="centermask2_depth_ros"  pkg="detectron2_ros" type="centermask2_depth_ros_compressed" output="screen" >
     <param name="rgb_input" value="$(arg rgb_input)" />
@@ -18,5 +19,6 @@
     <param name="visualization" value="$(arg visualization)" />
     <param name="static_depth_image" value="$(arg static_depth_image)" />
     <param name="camera_info" value="$(arg camera_info)" />
+    <param name="person_positions" value="$(arg person_positions)" />
   </node>
 </launch>

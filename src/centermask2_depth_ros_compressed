@@ -14,7 +14,10 @@ from detectron2.engine import DefaultPredictor
 from detectron2.utils.logger import setup_logger
 from detectron2.utils.visualizer import Visualizer
 from detectron2_ros.msg import Result
-from sensor_msgs.msg import Image, CompressedImage, RegionOfInterest
+from sensor_msgs.msg import Image, CompressedImage, RegionOfInterest, CameraInfo
+import pyrealsense2 as rs2
+
+from detectron2_ros.msg import PersonPositions, PersonPosition
 
 # For sync depth and rgb
 import message_filters
@@ -28,6 +31,7 @@ class Centermask2node(object):
         rospy.logwarn("Initializing")
         setup_logger()
 
+        pos = PersonPositions()
 
         self._bridge = CvBridge()
         self._last_rgb_msg = None
@@ -50,9 +54,13 @@ class Centermask2node(object):
         self._vis_pub = rospy.Publisher('~visualization', Image, queue_size=1)
         self._static_depth_img_pub = rospy.Publisher('~static_depth_image', Image, queue_size=1)
 
+        self._person_pos_pub = rospy.Publisher('~person_positions', PersonPositions, queue_size=1)
 
-        self._depth_pub = rospy.Publisher('/depth_pub', Image, queue_size=1)
-        self._rgb_pub = rospy.Publisher('/rgb_pub', Image, queue_size=1)
+        # self._depth_pub = rospy.Publisher('/depth_pub', Image, queue_size=1)
+        # self._rgb_pub = rospy.Publisher('/rgb_pub', Image, queue_size=1)
+
+        # self.getIntrinsics()
+        self.getManualHSRIntrinsics()
 
 
         self._image_sub = message_filters.Subscriber(self.load_param('~rgb_input'), CompressedImage)
@@ -61,8 +69,54 @@ class Centermask2node(object):
         self.ts = message_filters.ApproximateTimeSynchronizer([self._image_sub, self._depth_sub], 1, 0.020) # Note 3ms usually, 50ms for compressed
         self.ts.registerCallback(self.callback_images)
 
+
         self.start_time = time.time()
         rospy.loginfo("Centermask2 Node Initialized")
+
+    def convertPixelToPosition(self, depth_img, mask):
+        # Get the pixel location and depth of person centroid
+        count = (mask == 1).sum()
+
+        y_center, x_center = np.argwhere(mask==True).sum(0)/count
+        depth = np.median(depth_img[mask.astype(bool)])
+
+        # Convert to 3D position in camera coords 
+        xyz = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [x_center, y_center], depth/1000.0)
+                    
+        person_position_msg = PersonPosition()
+        person_position_msg.x = xyz[0]
+        person_position_msg.y = xyz[0]
+        person_position_msg.x = xyz[0]
+
+        # return xyz
+        return person_position_msg
+
+    def getManualHSRIntrinsics(self):
+        rospy.loginfo("Updating camera info")
+
+        self.intrinsics = rs2.intrinsics()
+        self.intrinsics.width = 640
+        self.intrinsics.height = 480
+        self.intrinsics.ppx = 320.5
+        self.intrinsics.ppy = 240.5
+        self.intrinsics.fx = 554.3827128226441
+        self.intrinsics.fy = 554.3827128226441
+        self.intrinsics.model = rs2.distortion.brown_conrady
+
+
+    def getIntrinsics(self):
+        # Get camera info
+        rospy.loginfo("Updating camera info")
+        cameraInfo = rospy.wait_for_message('~camera_info', CameraInfo, 60)
+
+        self.intrinsics = rs2.intrinsics()
+        self.intrinsics.width = cameraInfo.width
+        self.intrinsics.height = cameraInfo.height
+        self.intrinsics.ppx = cameraInfo.K[2]
+        self.intrinsics.ppy = cameraInfo.K[5]
+        self.intrinsics.fx = cameraInfo.K[0]
+        self.intrinsics.fy = cameraInfo.K[4]
+        self.intrinsics.model = rs2.distortion.brown_conrady
 
     def run(self):
 
@@ -76,8 +130,8 @@ class Centermask2node(object):
             return
 
         if img_msg is not None:
-            dur = depth_msg.header.stamp - img_msg.header.stamp
-            print("Time diff is {0} seconds".format(abs(dur.to_sec())))
+            # dur = depth_msg.header.stamp - img_msg.header.stamp
+            # print("Time diff is {0} seconds".format(abs(dur.to_sec())))
 
             self._image_counter = self._image_counter + 1
             if (self._image_counter % 11) == 10:
@@ -99,6 +153,18 @@ class Centermask2node(object):
             retain_inds = (result.scores.numpy() > self.score_thresh) & (class_names == 'person')
             result = result[retain_inds]
 
+            # For each mask
+            if sum(retain_inds) > 0:
+                all_person_positions_msg = PersonPositions()
+                all_person_positions_msg.header = depth_msg.header
+                masks = np.asarray(result.pred_masks)
+                for i in range(sum(retain_inds)):
+                    mask = masks[i]
+                    person_position_msg = self.convertPixelToPosition(np_depth_image, mask)
+                    all_person_positions_msg.positions.append(person_position_msg)
+                    self._person_pos_pub.publish(all_person_positions_msg)
+                    # print("Person {0} at {1}".format(i, person_pos))
+
             # Visualize results
             if self._visualization:
                 v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
@@ -107,8 +173,8 @@ class Centermask2node(object):
 
                 image_msg = self._bridge.cv2_to_imgmsg(img)
                 self._vis_pub.publish(image_msg)
-                self._depth_pub.publish(self._bridge.cv2_to_imgmsg(np_depth_image))
-                self._rgb_pub.publish(self._bridge.cv2_to_imgmsg(np_image))
+                # self._depth_pub.publish(self._bridge.cv2_to_imgmsg(np_depth_image))
+                # self._rgb_pub.publish(self._bridge.cv2_to_imgmsg(np_image))
 
     def getResult(self, predictions):
 
