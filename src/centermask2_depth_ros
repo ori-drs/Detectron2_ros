@@ -35,6 +35,7 @@ class Centermask2node(object):
         self._msg_lock = threading.Lock()
         self._image_counter = 0
 
+        self.score_thresh = 0.65
         self.removal_classes = ['person', 'chair']
 
         self.cfg = get_cfg()
@@ -82,19 +83,25 @@ class Centermask2node(object):
             result = outputs["instances"].to("cpu")
             result_msg = self.getResult(result)
 
-            static_depth_img = self.getStaticDepthImage(np_depth_image, result)
+            # static_depth_img = self.getStaticDepthImage(np_depth_image, result)
 
             self._result_pub.publish(result_msg)
 
-            static_depth_image_msg = self._bridge.cv2_to_imgmsg(static_depth_img)
-            static_depth_image_msg.header = self._depth_header
+            # static_depth_image_msg = self._bridge.cv2_to_imgmsg(static_depth_img)
+            # static_depth_image_msg.header = self._depth_header
 
-            self._static_depth_img_pub.publish(static_depth_image_msg)
+            # self._static_depth_img_pub.publish(static_depth_image_msg)
+            
+            # Mask out people with score greater than threshold
+            class_ids = result.pred_classes if result.has("pred_classes") else None
+            class_names = np.array(self._class_names)[class_ids.numpy()]        
+            retain_inds = (result.scores.numpy() > self.score_thresh) & (class_names == 'person')
+            result = result[retain_inds]
 
             # Visualize results
             if self._visualization:
                 v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-                v = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+                v = v.draw_instance_predictions(result)
                 img = v.get_image()[:, :, ::-1]
 
                 image_msg = self._bridge.cv2_to_imgmsg(img)
@@ -133,7 +140,7 @@ class Centermask2node(object):
 
     def getThresholdedResult(self, predictions):
 
-        inds = np.where(predictions.scores.numpy() > 0.5)[0]
+        inds = np.where(predictions.scores.numpy() > self.score_thresh)[0]
 
         boxes = predictions.pred_boxes[inds] if predictions.has("pred_boxes") else None
         
@@ -225,7 +232,7 @@ class Centermask2node(object):
             # static_depth_img[masks[inds[i]]]=0
             # Could be worth transforming the masks to both reduce noise and dilate
             # static_depth_img[cv.dilate(masks[inds[i]],kernel,iterations = 1) ]=0
-            static_depth_img[(cv.dilate(np.float32(masks[inds[i]]),kernel,iterations = 1)).astype(bool)]=0
+            static_depth_img[(cv.dilate(np.float32(masks[inds[i]]),kernel,iterations = 2)).astype(bool)]=0
 
         return static_depth_img
 
