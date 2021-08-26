@@ -56,6 +56,7 @@ install(PROGRAMS
   src/detectron2_ros
   src/centermask2_ros
   src/centermask2_depth_ros
+  src/centermask2_depth_ros_compressed
 DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
