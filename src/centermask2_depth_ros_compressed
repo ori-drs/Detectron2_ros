@@ -85,8 +85,8 @@ class Centermask2node(object):
                     
         person_position_msg = PersonPosition()
         person_position_msg.x = xyz[0]
-        person_position_msg.y = xyz[0]
-        person_position_msg.x = xyz[0]
+        person_position_msg.y = xyz[1]
+        person_position_msg.z = xyz[2]
 
         # return xyz
         return person_position_msg
