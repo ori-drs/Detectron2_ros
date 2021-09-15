@@ -14,7 +14,10 @@ from detectron2.engine import DefaultPredictor
 from detectron2.utils.logger import setup_logger
 from detectron2.utils.visualizer import Visualizer
 from detectron2_ros.msg import Result
-from sensor_msgs.msg import Image, RegionOfInterest
+from sensor_msgs.msg import Image, RegionOfInterest, CameraInfo
+import pyrealsense2 as rs2
+
+from detectron2_ros.msg import PersonPositions, PersonPosition
 
 # For sync depth and rgb
 import message_filters
@@ -28,6 +31,7 @@ class Centermask2node(object):
         rospy.logwarn("Initializing")
         setup_logger()
 
+        pos = PersonPositions()
 
         self._bridge = CvBridge()
         self._last_rgb_msg = None
@@ -50,6 +54,13 @@ class Centermask2node(object):
         self._vis_pub = rospy.Publisher('~visualization', Image, queue_size=1)
         self._static_depth_img_pub = rospy.Publisher('~static_depth_image', Image, queue_size=1)
 
+
+        self._person_pos_pub = rospy.Publisher(self.load_param('~person_positions'), PersonPositions, queue_size=1)
+        # self.getIntrinsics()
+
+        # self.getManualHSRIntrinsics()
+        self.getManualRealsenseIntrinsics()
+
         self._image_sub = message_filters.Subscriber(self.load_param('~rgb_input'), Image)
         self._depth_sub = message_filters.Subscriber(self.load_param('~depth_input'), Image)
 
@@ -59,7 +70,66 @@ class Centermask2node(object):
         self.start_time = time.time()
         rospy.loginfo("Centermask2 Node Initialized")
 
+    def convertPixelToPosition(self, depth_img, mask):
+        # Get the pixel location and depth of person centroid
+        count = (mask == 1).sum()
+
+        y_center, x_center = np.argwhere(mask==True).sum(0)/count
+        depth = np.median(depth_img[mask.astype(bool)])
+
+        # Convert to 3D position in camera coords 
+        xyz = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [x_center, y_center], depth/1000.0)
+                    
+        person_position_msg = PersonPosition()
+        person_position_msg.x = xyz[0]
+        person_position_msg.y = xyz[1]
+        person_position_msg.z = xyz[2]
+
+        # return xyz
+        return person_position_msg
+
+    def getManualHSRIntrinsics(self):
+        rospy.loginfo("Updating camera info")
+
+        self.intrinsics = rs2.intrinsics()
+        self.intrinsics.width = 640
+        self.intrinsics.height = 480
+        self.intrinsics.ppx = 322.2156457958147
+        self.intrinsics.ppy = 238.8396597454201
+        self.intrinsics.fx = 537.3372465571922
+        self.intrinsics.fy = 537.8279138435478
+        self.intrinsics.model = rs2.distortion.brown_conrady
+
+    def getManualRealsenseIntrinsics(self):
+        rospy.loginfo("Updating camera info")
+
+        self.intrinsics = rs2.intrinsics()
+        self.intrinsics.width = 640
+        self.intrinsics.height = 480
+        self.intrinsics.ppx = 324.9241638183594
+        self.intrinsics.ppy = 236.38864135742188
+        self.intrinsics.fx = 618.6040649414062
+        self.intrinsics.fy = 618.9261474609375
+        self.intrinsics.model = rs2.distortion.brown_conrady
+
+
+    def getIntrinsics(self):
+        # Get camera info
+        rospy.loginfo("Updating camera info")
+        cameraInfo = rospy.wait_for_message(self.load_param('~camera_info'), CameraInfo, 60)
+
+        self.intrinsics = rs2.intrinsics()
+        self.intrinsics.width = cameraInfo.width
+        self.intrinsics.height = cameraInfo.height
+        self.intrinsics.ppx = cameraInfo.K[2]
+        self.intrinsics.ppy = cameraInfo.K[5]
+        self.intrinsics.fx = cameraInfo.K[0]
+        self.intrinsics.fy = cameraInfo.K[4]
+        self.intrinsics.model = rs2.distortion.brown_conrady
+        rospy.loginfo("Camera intrinsics set.")
+
     def run(self):
+        # rospy.loginfo("Run")
 
         if self._msg_lock.acquire(False):
             img_msg = self._last_rgb_msg
@@ -70,42 +140,52 @@ class Centermask2node(object):
         else:
             return
 
-        if img_msg is not None:
-            self._image_counter = self._image_counter + 1
-            if (self._image_counter % 11) == 10:
-                rospy.loginfo("Images detected per second=%.2f",
-                                float(self._image_counter) / (time.time() - self.start_time))
+        # rospy.loginfo("Run else")
 
-            np_image = self.convert_to_cv_image(img_msg)
-            np_depth_image = self.convert_to_cv_image(depth_msg)
+        self._image_counter = self._image_counter + 1
+        if (self._image_counter % 11) == 10:
+            rospy.loginfo("Images detected per second=%.2f",
+                            float(self._image_counter) / (time.time() - self.start_time))
 
-            outputs = self.predictor(np_image)
-            result = outputs["instances"].to("cpu")
-            result_msg = self.getResult(result)
+        # np_image = self._bridge.compressed_imgmsg_to_cv2(img_msg)
+        np_image = self.convert_to_cv_image(img_msg)
+        np_depth_image = self.convert_to_cv_image(depth_msg)
 
-            # static_depth_img = self.getStaticDepthImage(np_depth_image, result)
+        # print(np_image.shape)
+        outputs = self.predictor(np_image)
+        result = outputs["instances"].to("cpu")
+        result_msg = self.getResult(result)
 
-            self._result_pub.publish(result_msg)
+        self._result_pub.publish(result_msg)
+        
+        # Mask out people with score greater than threshold
+        class_ids = result.pred_classes if result.has("pred_classes") else None
+        class_names = np.array(self._class_names)[class_ids.numpy()]        
+        retain_inds = (result.scores.numpy() > self.score_thresh) & (class_names == 'person')
+        result = result[retain_inds]
 
-            # static_depth_image_msg = self._bridge.cv2_to_imgmsg(static_depth_img)
-            # static_depth_image_msg.header = self._depth_header
+        # For each mask
+        if sum(retain_inds) > 0:
+            all_person_positions_msg = PersonPositions()
+            all_person_positions_msg.header = depth_msg.header
+            masks = np.asarray(result.pred_masks)
+            for i in range(sum(retain_inds)):
+                mask = masks[i]
+                person_position_msg = self.convertPixelToPosition(np_depth_image, mask)
+                all_person_positions_msg.positions.append(person_position_msg)
+                rospy.loginfo("Publishing person position")
 
-            # self._static_depth_img_pub.publish(static_depth_image_msg)
-            
-            # Mask out people with score greater than threshold
-            class_ids = result.pred_classes if result.has("pred_classes") else None
-            class_names = np.array(self._class_names)[class_ids.numpy()]        
-            retain_inds = (result.scores.numpy() > self.score_thresh) & (class_names == 'person')
-            result = result[retain_inds]
+                self._person_pos_pub.publish(all_person_positions_msg)
+                # print("Person {0} at {1}".format(i, person_pos))
 
-            # Visualize results
-            if self._visualization:
-                v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-                v = v.draw_instance_predictions(result)
-                img = v.get_image()[:, :, ::-1]
+        # Visualize results
+        if self._visualization:
+            v = Visualizer(np_image[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
+            v = v.draw_instance_predictions(result)
+            img = v.get_image()[:, :, ::-1]
 
-                image_msg = self._bridge.cv2_to_imgmsg(img)
-                self._vis_pub.publish(image_msg)
+            image_msg = self._bridge.cv2_to_imgmsg(img)
+            self._vis_pub.publish(image_msg)
 
 
     def getResult(self, predictions):
@@ -237,8 +317,8 @@ class Centermask2node(object):
         return static_depth_img
 
     def callback_images(self, rgb_msg, depth_msg):
-        rospy.logdebug("Get time-synchronised images")
-        # rospy.loginfo("Get time-synchronised images")
+        # rospy.logdebug("Get time-synchronised images")
+        # rospy.loginfo("Got time-synchronised images")
         if self._msg_lock.acquire(False):
             self._last_rgb_msg = rgb_msg
             self._last_depth_msg = depth_msg

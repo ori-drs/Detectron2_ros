@@ -54,13 +54,13 @@ class Centermask2node(object):
         self._vis_pub = rospy.Publisher('~visualization', Image, queue_size=1)
         self._static_depth_img_pub = rospy.Publisher('~static_depth_image', Image, queue_size=1)
 
-        self._person_pos_pub = rospy.Publisher('~person_positions', PersonPositions, queue_size=1)
+        self._person_pos_pub = rospy.Publisher(self.load_param('~person_positions'), PersonPositions, queue_size=1)
 
         # self._depth_pub = rospy.Publisher('/depth_pub', Image, queue_size=1)
         # self._rgb_pub = rospy.Publisher('/rgb_pub', Image, queue_size=1)
 
         # self.getIntrinsics()
-        self.getManualHSRIntrinsics()
+        self.getManualRealsenseIntrinsics()
 
 
         self._image_sub = message_filters.Subscriber(self.load_param('~rgb_input'), CompressedImage)
@@ -97,17 +97,29 @@ class Centermask2node(object):
         self.intrinsics = rs2.intrinsics()
         self.intrinsics.width = 640
         self.intrinsics.height = 480
-        self.intrinsics.ppx = 320.5
-        self.intrinsics.ppy = 240.5
-        self.intrinsics.fx = 554.3827128226441
-        self.intrinsics.fy = 554.3827128226441
+        self.intrinsics.ppx = 322.2156457958147
+        self.intrinsics.ppy = 238.8396597454201
+        self.intrinsics.fx = 537.3372465571922
+        self.intrinsics.fy = 537.8279138435478
+        self.intrinsics.model = rs2.distortion.brown_conrady
+
+    def getManualRealsenseIntrinsics(self):
+        rospy.loginfo("Updating camera info")
+
+        self.intrinsics = rs2.intrinsics()
+        self.intrinsics.width = 640
+        self.intrinsics.height = 480
+        self.intrinsics.ppx = 324.9241638183594
+        self.intrinsics.ppy = 236.38864135742188
+        self.intrinsics.fx = 618.6040649414062
+        self.intrinsics.fy = 618.9261474609375
         self.intrinsics.model = rs2.distortion.brown_conrady
 
 
     def getIntrinsics(self):
         # Get camera info
         rospy.loginfo("Updating camera info")
-        cameraInfo = rospy.wait_for_message('~camera_info', CameraInfo, 60)
+        cameraInfo = rospy.wait_for_message(self.load_param('~camera_info'), CameraInfo, 60)
 
         self.intrinsics = rs2.intrinsics()
         self.intrinsics.width = cameraInfo.width
@@ -117,6 +129,7 @@ class Centermask2node(object):
         self.intrinsics.fx = cameraInfo.K[0]
         self.intrinsics.fy = cameraInfo.K[4]
         self.intrinsics.model = rs2.distortion.brown_conrady
+        rospy.loginfo("Camera intrinsics set.")
 
     def run(self):
 
@@ -130,8 +143,8 @@ class Centermask2node(object):
             return
 
         if img_msg is not None:
-            # dur = depth_msg.header.stamp - img_msg.header.stamp
-            # print("Time diff is {0} seconds".format(abs(dur.to_sec())))
+            dur = depth_msg.header.stamp - img_msg.header.stamp
+            print("Time diff is {0} seconds".format(abs(dur.to_sec())))
 
             self._image_counter = self._image_counter + 1
             if (self._image_counter % 11) == 10:
@@ -139,7 +152,9 @@ class Centermask2node(object):
                                 float(self._image_counter) / (time.time() - self.start_time))
 
             np_image = self._bridge.compressed_imgmsg_to_cv2(img_msg)
-            np_depth_image = self.convert_compressed_to_cv_image(depth_msg)
+            np_depth_image = self.convert_compresseddepth_to_cv_image(depth_msg)
+
+
 
             outputs = self.predictor(np_image)
             result = outputs["instances"].to("cpu")
@@ -290,6 +305,8 @@ class Centermask2node(object):
 
         depth_img_raw = cv.imdecode(np.frombuffer(raw_data, np.uint8), cv.IMREAD_ANYDEPTH)
 
+        return depth_img_raw
+
     def convert_compressed_to_cv_image(self, image_msg):
 
         if image_msg is None:
@@ -337,8 +354,8 @@ class Centermask2node(object):
         return static_depth_img
 
     def callback_images(self, rgb_msg, depth_msg):
-        rospy.logdebug("Get time-synchronised images")
-        # rospy.loginfo("Get time-synchronised images")
+        # rospy.logdebug("Get time-synchronised images")
+        rospy.loginfo("Get time-synchronised images")
         if self._msg_lock.acquire(False):
             self._last_rgb_msg = rgb_msg
             self._last_depth_msg = depth_msg
