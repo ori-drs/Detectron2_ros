@@ -7,6 +7,8 @@
   <arg name="model" default="detectron2://COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl" />
   <arg name="visualization" default="true" />
   <arg name="static_depth_image" default="static_depth_image" />
+  <arg name="camera_info" default="camera_info" />
+  <arg name="person_positions" default="person_positions" />
 
   <node name="centermask2_depth_ros"  pkg="detectron2_ros" type="centermask2_depth_ros" output="screen" >
     <param name="rgb_input" value="$(arg rgb_input)" />
@@ -16,5 +18,7 @@
     <param name="model" value="$(arg model)" />
     <param name="visualization" value="$(arg visualization)" />
     <param name="static_depth_image" value="$(arg static_depth_image)" />
+    <param name="camera_info" value="$(arg camera_info)" />
+    <param name="person_positions" value="$(arg person_positions)" />
   </node>
 </launch>

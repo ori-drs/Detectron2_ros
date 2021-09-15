@@ -1,5 +1,5 @@
 <launch>
-  <arg name="person_tracking" default="/centermask2_depth_ros/person_positions" />
+  <arg name="person_tracking" default="/person_positions" />
   <arg name="vicon_person" default="/vicon/person_1/person_1" />
 
   <node name="person_vicon_publisher"  pkg="detectron2_ros" type="person_vicon_publisher" output="screen" >
